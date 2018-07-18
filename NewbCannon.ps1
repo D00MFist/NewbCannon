@@ -5609,7 +5609,8 @@ New-Struct. :P
 }
 
 
-Write-Host @"
+#Write-Host 
+$Placeholder @"
 Congrats Newb!!! You have Imported the Quick and Dirty Powershell Enumeration Script
 
 ###################

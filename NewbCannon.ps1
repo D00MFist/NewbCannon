@@ -23,7 +23,10 @@
 #
 # A collection of Useful Powershell Scripts
 #
-#D00mfist
+#Compiled by D00mfist
+#
+#Functions from harmj0y, obscuresec, leoloobeek, mattifestation
+#
 ######################################################################################################################
 
 
@@ -34,7 +37,6 @@ $DeflatedStream = New-Object IO.Compression.DeflateStream([IO.MemoryStream][Conv
 $UncompressedFileBytes = New-Object Byte[](1380352)
 $DeflatedStream.Read($UncompressedFileBytes, 0, 1380352) | Out-Null
 $Null = [Reflection.Assembly]::Load($UncompressedFileBytes)
-
 
 function Get-Domain {
 <#
